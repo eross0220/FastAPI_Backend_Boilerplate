@@ -68,11 +68,3 @@ Head over to the [Uvicorn Deployment](https://www.uvicorn.org/deployment/) docum
 * [FastAPI](https://fastapi.tiangolo.com/) - The API framework used
 * [SQLAlchemy](https://www.sqlalchemy.org/) - Database ORM
 * [Pipenv](https://pypi.org/project/pipenv/) - Dependency and virtual environment manager
-
-## Authors
-
-* **Surya Kant Bansal** - *Initial work* - [skb1129](https://github.com/skb1129)
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
