@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "fastapi-backend-boilerplate"
+version = "0.1.0"
+description = "FastAPI Backend Boilerplate with SQLAlchemy and Alembic"
+authors = ["eross220@proton.me"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+fastapi = "^0.61.1"
+alembic = "^1.4.3"
+uvicorn = "*"
+sqlalchemy = "*"
+pydantic = "*"
+psycopg2-binary = "*"
+python-multipart = "*"
+requests = "*"
+python-dotenv = "*"
+
+[tool.poetry.group.dev.dependencies]
+pylint = "*"
+pytest = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+start = "uvicorn app.main:app --reload"
