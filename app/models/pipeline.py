@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.database import Base
+from app.database.base_class import Base
 import enum
 
 class PipelineStatus(str, enum.Enum):
@@ -26,11 +26,10 @@ class Pipeline(Base):
     __tablename__ = "pipelines"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String, unique=False, index=False)
     description = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
     blocks = relationship("Block", back_populates="pipeline")
     runs = relationship("PipelineRun", back_populates="pipeline")
 
@@ -90,5 +89,5 @@ class Artifact(Base):
     block_run_id = Column(Integer, ForeignKey("block_runs.id"))
     name = Column(String)
     file_path = Column(String)
-    metadata = Column(JSON)
+    artifact_metadata = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
