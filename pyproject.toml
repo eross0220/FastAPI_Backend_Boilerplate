@@ -16,6 +16,7 @@ pydantic = "*"
 python-multipart = "*"
 requests = "*"
 python-dotenv = "*"
+tomli = "^2.2.1"
 
 [tool.poetry.group.dev.dependencies]
 pylint = "*"
