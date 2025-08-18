@@ -5,6 +5,8 @@ from app.core.kafka_client import KafkaClient
 from datetime import datetime
 import json
 import os
+import threading
+import time
 from rq import Queue
 from redis import Redis
 from workers.universal_worker import process_task
@@ -21,10 +23,125 @@ class Orchestrator:
         self.task_queue = Queue('pipeline_tasks', connection=self.redis_conn)
         
         self.kafka_client = KafkaClient()
+        
+        # Start Redis Pub/Sub consumer for block completion events
+        self._start_redis_consumer()
     
-    def create_sample_pipeline(self, db:Session):
-
-         # Create pipeline
+    def _start_redis_consumer(self):
+        """Start Redis Pub/Sub consumer to listen for block completion events"""
+        def consume_block_events():
+            pubsub = self.redis_conn.pubsub()
+            pubsub.subscribe("block_completion_events", "data_flow_events")
+            
+            print("Started Redis consumer for block completion and data flow events")
+            
+            for message in pubsub.listen():
+                if message['type'] == 'message':
+                    try:
+                        event_data = json.loads(message['data'])
+                        print(f"Received Redis event: {event_data.get('event_type')}")
+                        
+                        # Handle the event
+                        self._handle_redis_event(event_data)
+                        
+                    except Exception as e:
+                        print(f"Error processing Redis event: {e}")
+        
+        # Start consumer in background thread
+        thread = threading.Thread(target=consume_block_events, daemon=True)
+        thread.start()
+    
+    def _handle_redis_event(self, event_data: dict):
+        """Handle events from Redis Pub/Sub"""
+        event_type = event_data.get("event_type")
+        
+        if event_type in ["block_completed", "block_failed"]:
+            self._handle_block_completion_event(event_data)
+        elif event_type == "data_ready":
+            self._handle_data_ready_event(event_data)
+    
+    def _handle_block_completion_event(self, event_data: dict):
+        """Handle block completion event from Redis"""
+        block_run_id = event_data.get("block_run_id")
+        success = event_data.get("success", False)
+        result_data = event_data.get("result_data", {})
+        
+        # Update database and trigger next blocks
+        from app.database.session import SessionLocal
+        db = SessionLocal()
+        
+        try:
+            # Check if block is already completed to prevent duplicate processing
+            block_run = db.query(BlockRun).filter(BlockRun.id == block_run_id).first()
+            if block_run and block_run.status == BlockStatus.COMPLETED:
+                print(f"Block {block_run_id} already completed, skipping duplicate event")
+                return
+                
+            self.handle_block_completion(db, block_run_id, result_data, success)
+        finally:
+            db.close()
+    
+    def _handle_data_ready_event(self, event_data: dict):
+        """Handle data ready event for next blocks"""
+        source_block_run_id = event_data.get("source_block_run_id")
+        data_type = event_data.get("data_type")
+        data = event_data.get("data", {})
+        target_blocks = event_data.get("target_blocks", [])
+        
+        print(f"Data ready: {data_type} from block {source_block_run_id} for blocks {target_blocks}")
+        
+        # Update configs for target blocks with the new data
+        from app.database.session import SessionLocal
+        db = SessionLocal()
+        
+        try:
+            self._update_block_configs_with_data(db, source_block_run_id, data_type, data, target_blocks)
+        finally:
+            db.close()
+    
+    def _update_block_configs_with_data(self, db: Session, source_block_run_id: int, data_type: str, data: dict, target_blocks: list):
+        """Update block configs with data from previous blocks"""
+        # Get the source block run to find the pipeline run
+        source_block_run = db.query(BlockRun).filter(BlockRun.id == source_block_run_id).first()
+        if not source_block_run:
+            return
+        
+        pipeline_run_id = source_block_run.pipeline_run_id
+        
+        # Find target blocks in the same pipeline run
+        for target_block_type in target_blocks:
+            # Find the block run for this block type
+            target_block_run = db.query(BlockRun).join(Block).filter(
+                BlockRun.pipeline_run_id == pipeline_run_id,
+                Block.block_type == target_block_type
+            ).first()
+            
+            if target_block_run and target_block_run.status == BlockStatus.PENDING:
+                # Update the block config with the new data
+                block = db.query(Block).filter(Block.id == target_block_run.block_id).first()
+                if block:
+                    # Merge existing config with new data
+                    updated_config = block.config.copy() if block.config else {}
+                    
+                    # Add data based on data type
+                    if data_type == "csv_data":
+                        updated_config["texts"] = data.get("texts", [])
+                        updated_config["csv_data"] = data
+                    elif data_type == "sentiment_data":
+                        updated_config["sentiment_data"] = data
+                        updated_config["texts"] = data.get("texts", [])
+                    elif data_type == "toxicity_data":
+                        updated_config["toxicity_data"] = data
+                        updated_config["texts"] = data.get("texts", [])
+                    
+                    # Update the block config
+                    block.config = updated_config
+                    db.commit()
+                    
+                    print(f"Updated config for {target_block_type} block with {data_type} data")
+    
+    def create_sample_pipeline(self, db: Session):
+        # Create pipeline
         pipeline = Pipeline(
             name="Sample Pipeline",
             description="CSV → LLM → File Writer"
@@ -74,14 +191,16 @@ class Orchestrator:
         )
         
         db.add_all([csv_block, sentiment_block, toxicity_block, file_writer_sentiment, file_writer_toxicity])
-        db.commit()
+        db.commit()  # Commit here to get the IDs
         
-        # Create dependencies
-        print(f"@@@@@ Sentiment block id: {sentiment_block.id}")
-        print(f"@@@@@ CSV block id: {csv_block.id}")
-        print(f"@@@@@ file_writer_sentiment.id: {file_writer_sentiment.id}")
-        print(f"@@@@@ file_writer_toxicity.id: {file_writer_toxicity.id}")
-
+        # Now the IDs will be available
+        print(f"CSV_Reader Block id: {csv_block.id}")
+        print(f"Sentiment_Analysis Block id: {sentiment_block.id}")
+        print(f"Toxicity_Detection Block id: {toxicity_block.id}")
+        print(f"File_Writer_Sentiment Block id: {file_writer_sentiment.id}")
+        print(f"File_Writer_Toxicity Block id: {file_writer_toxicity.id}")
+        
+        # Create dependencies with valid IDs
         sentiment_dep = BlockDependency(block_id=sentiment_block.id, depends_on_id=csv_block.id)
         toxicity_dep = BlockDependency(block_id=toxicity_block.id, depends_on_id=csv_block.id)
         file_sentiment_dep = BlockDependency(block_id=file_writer_sentiment.id, depends_on_id=sentiment_block.id)
@@ -91,7 +210,6 @@ class Orchestrator:
         db.commit()
         
         return pipeline.id
-
     
     def _process_csv_reader(config: Dict[str, Any]) -> Dict[str, Any]:
         """Process CSV Reader tasks - MOCKUP VERSION"""
@@ -231,6 +349,8 @@ class Orchestrator:
         db.add(pipeline_run)
         db.commit()
         db.refresh(pipeline_run)
+
+        print(f"========== Pipeline Started: {pipeline_run.id} ==========")
         
         # Create block runs for all blocks
         blocks = db.query(Block).filter(Block.pipeline_id == pipeline_id).order_by(Block.order).all()
@@ -278,7 +398,8 @@ class Orchestrator:
         
         # Find ready blocks (no dependencies or all dependencies completed)
         ready_blocks = self._find_ready_blocks(db, pipeline_run_id, block_dependencies)
-        print(f"@@@@@ Ready blocks: {len(ready_blocks)}")
+        print(f"/* Ready Blocks Count: {len(ready_blocks)} */")
+        
         # Dispatch ready blocks to RQ queue
         for block_run in ready_blocks:
             self._dispatch_block_to_rq_queue(db, block_run)
@@ -288,6 +409,12 @@ class Orchestrator:
         ready_blocks = []
         
         for block_id, dependencies in block_dependencies.items():
+            block_run = self._get_block_run(db, pipeline_run_id, block_id)
+            
+            # Skip if block is already running, completed, or failed
+            if block_run.status in [BlockStatus.RUNNING, BlockStatus.COMPLETED, BlockStatus.FAILED]:
+                continue
+
             if not dependencies:  # No dependencies
                 ready_blocks.append(self._get_block_run(db, pipeline_run_id, block_id))
             else:
@@ -312,7 +439,11 @@ class Orchestrator:
         ).first()
     
     def _dispatch_block_to_rq_queue(self, db: Session, block_run: BlockRun):
-        """Dispatch a block to RQ queue"""
+        """Dispatch a block to RQ queue with enhanced config"""
+        # Double-check block status before dispatching
+        if block_run.status != BlockStatus.PENDING:
+            print(f"Block {block_run.id} is not pending (status: {block_run.status}), skipping dispatch")
+            return
         block = db.query(Block).filter(Block.id == block_run.block_id).first()
         
         # Update block run status
@@ -331,15 +462,19 @@ class Orchestrator:
             }
         )
         
+        # Enhanced config with block_run_id for tracking
+        enhanced_config = block.config.copy() if block.config else {}
+        enhanced_config["block_run_id"] = block_run.id
+        
         # Dispatch to single RQ queue - any worker can pick it up
         job = self.task_queue.enqueue_call(
             func=process_task,
-            args=(block_run.id, block.block_type.value, block.config),
+            args=(block_run.id, block.block_type.value, enhanced_config),
             result_ttl=5000
         )
         
         print(f"Dispatched {block.block_type.value} to queue, job_id: {job.get_id()}")
-    
+
     def handle_block_completion(self, db: Session, block_run_id: int, result_data: dict, success: bool = True):
         """Handle completion of a block run"""
         block_run = db.query(BlockRun).filter(BlockRun.id == block_run_id).first()
