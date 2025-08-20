@@ -154,7 +154,7 @@ class Orchestrator:
             pipeline_id=pipeline.id,
             name="CSV Reader",
             block_type="csv_reader",
-            config={"file_path": "./data/sample.csv"},
+            config={"file_path": "./data/sample.csv", "purpose": "input_data"},
             order=1
         )
         
@@ -162,7 +162,7 @@ class Orchestrator:
             pipeline_id=pipeline.id,
             name="Sentiment Analysis",
             block_type="sentiment_analysis",
-            config={},  # Will be populated with CSV data
+            config={"purpose": "sentiment_processing"},
             order=2
         )
         
@@ -170,7 +170,7 @@ class Orchestrator:
             pipeline_id=pipeline.id,
             name="Toxicity Detection",
             block_type="toxicity_detection",
-            config={},  # Will be populated with CSV data
+            config={"purpose": "toxicity_processing"},
             order=3
         )
         
@@ -178,7 +178,11 @@ class Orchestrator:
             pipeline_id=pipeline.id,
             name="File Writer (Sentiment)",
             block_type="file_writer",
-            config={},  # Will be populated with sentiment results
+            config={
+                "purpose": "sentiment_output",
+                "output_type": "sentiment_results",
+                "file_prefix": "sentiment_"
+            },
             order=4
         )
         
@@ -186,21 +190,18 @@ class Orchestrator:
             pipeline_id=pipeline.id,
             name="File Writer (Toxicity)",
             block_type="file_writer",
-            config={},  # Will be populated with toxicity results
+            config={
+                "purpose": "toxicity_output", 
+                "output_type": "toxicity_results",
+                "file_prefix": "toxicity_"
+            },
             order=5
         )
         
         db.add_all([csv_block, sentiment_block, toxicity_block, file_writer_sentiment, file_writer_toxicity])
-        db.commit()  # Commit here to get the IDs
+        db.commit()
         
-        # Now the IDs will be available
-        print(f"CSV_Reader Block id: {csv_block.id}")
-        print(f"Sentiment_Analysis Block id: {sentiment_block.id}")
-        print(f"Toxicity_Detection Block id: {toxicity_block.id}")
-        print(f"File_Writer_Sentiment Block id: {file_writer_sentiment.id}")
-        print(f"File_Writer_Toxicity Block id: {file_writer_toxicity.id}")
-        
-        # Create dependencies with valid IDs
+        # Create dependencies
         sentiment_dep = BlockDependency(block_id=sentiment_block.id, depends_on_id=csv_block.id)
         toxicity_dep = BlockDependency(block_id=toxicity_block.id, depends_on_id=csv_block.id)
         file_sentiment_dep = BlockDependency(block_id=file_writer_sentiment.id, depends_on_id=sentiment_block.id)
@@ -454,6 +455,10 @@ class Orchestrator:
                 "event_type": "block_started",
                 "block_run_id": block_run.id,
                 "block_type": block.block_type.value,
+                "block_name": block.name,
+                "block_description": f"{block.block_type.value} for {self._get_block_purpose(block)}",
+                "block_config": block.config,
+                "block_purpose": self._get_block_purpose(block),
                 "timestamp": datetime.utcnow().isoformat()
             }
         )
@@ -495,6 +500,10 @@ class Orchestrator:
                 "event_type": "block_completed" if success else "block_failed",
                 "block_run_id": block_run_id,
                 "block_type":block_run.block.block_type.value,
+                "block_name": block_run.block.name,
+                "block_description": f"{block_run.block.block_type.value} for {self._get_block_purpose(block_run.block)}",
+                "block_config": block_run.block.config,
+                "block_purpose": self._get_block_purpose(block_run.block),
                 "success": success,
                 "timestamp": datetime.utcnow().isoformat()
             }
@@ -533,3 +542,22 @@ class Orchestrator:
                     "timestamp": datetime.utcnow().isoformat()
                 }
             )
+
+    def _get_block_purpose(self, block: Block) -> str:
+        """Get a human-readable description of what this block does"""
+        if block.block_type.value == "file_writer":
+            # Check the block name to determine purpose
+            if "sentiment" in block.name.lower():
+                return "sentiment analysis results"
+            elif "toxicity" in block.name.lower():
+                return "toxicity detection results"
+            else:
+                return "general output"
+        elif block.block_type.value == "csv_reader":
+            return "CSV data input"
+        elif block.block_type.value == "sentiment_analysis":
+            return "sentiment analysis processing"
+        elif block.block_type.value == "toxicity_detection":
+            return "toxicity detection processing"
+        else:
+            return "data processing"
