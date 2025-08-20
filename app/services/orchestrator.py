@@ -349,8 +349,6 @@ class Orchestrator:
         db.add(pipeline_run)
         db.commit()
         db.refresh(pipeline_run)
-
-        print(f"========== Pipeline Started: {pipeline_run.id} ==========")
         
         # Create block runs for all blocks
         blocks = db.query(Block).filter(Block.pipeline_id == pipeline_id).order_by(Block.order).all()
@@ -397,9 +395,7 @@ class Orchestrator:
             block_dependencies[block.id] = [dep.depends_on_id for dep in dependencies]
         
         # Find ready blocks (no dependencies or all dependencies completed)
-        ready_blocks = self._find_ready_blocks(db, pipeline_run_id, block_dependencies)
-        print(f"/* Ready Blocks Count: {len(ready_blocks)} */")
-        
+        ready_blocks = self._find_ready_blocks(db, pipeline_run_id, block_dependencies)        
         # Dispatch ready blocks to RQ queue
         for block_run in ready_blocks:
             self._dispatch_block_to_rq_queue(db, block_run)
@@ -498,6 +494,7 @@ class Orchestrator:
             {
                 "event_type": "block_completed" if success else "block_failed",
                 "block_run_id": block_run_id,
+                "block_type":block_run.block.block_type.value,
                 "success": success,
                 "timestamp": datetime.utcnow().isoformat()
             }

@@ -9,14 +9,14 @@ from typing import List
 router = APIRouter()
 orchestrator = Orchestrator()
 
-@router.post("/pipelines/")
+@router.post("/pipelines")
 def create_pipeline(pipeline: PipelineCreate, db: Session = Depends(get_db)):
     """Create a new pipeline"""
     print("Creating  sample pipeline pipeline")
     created_pipeline = orchestrator.create_sample_pipeline(db)
     return created_pipeline
 
-@router.get("/pipelines/")
+@router.get("/pipelines")
 def get_pipelines(db: Session = Depends(get_db)):
     """Get all pipelines"""
     return db.query(Pipeline).all()

@@ -23,5 +23,25 @@ class KafkaClient:
             producer = self.get_producer()
             producer.send(topic, key=key, value=event_data)
             producer.flush()
+            # print(f"📡 [KAFKA] Published event to topic '{topic}'")
         except Exception as e:
-            print(f"Error publishing to Kafka: {e}")
+            print(f"❌ Error publishing to Kafka: {e}")
+
+    def get_consumer(self):
+        """Get Kafka consumer for reading events"""
+        if not hasattr(self, 'consumer') or not self.consumer:
+            try:
+                self.consumer = KafkaConsumer(
+                    bootstrap_servers=self.bootstrap_servers,
+                    value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+                    key_deserializer=lambda k: k.decode('utf-8') if k else None,
+                    auto_offset_reset='latest',  # Start from latest messages
+                    enable_auto_commit=True,
+                    group_id='pipeline_logs_consumer',  # Consumer group
+                    consumer_timeout_ms=1000
+                )
+                print(f"✅ Kafka consumer connected to {self.bootstrap_servers}")
+            except Exception as e:
+                print(f"❌ Failed to create Kafka consumer: {e}")
+                return None
+        return self.consumer
