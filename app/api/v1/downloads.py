@@ -10,7 +10,7 @@ from app.models.pipeline import Block
 router = APIRouter()
 
 # Configure output directory (where your CSV files are saved)
-OUTPUT_DIR = "./output"
+OUTPUT_DIR = "/app/outputs"
 
 @router.get("/pipeline/{pipeline_run_id}/files")
 async def get_pipeline_files(pipeline_run_id: int, db: Session = Depends(get_db)):
@@ -63,6 +63,7 @@ async def download_pipeline_file(pipeline_run_id: int, filename: str, db: Sessio
         
         # Check if file exists in output directory
         file_path = os.path.join(OUTPUT_DIR, filename)
+        print(f"Download File path: {file_path}")
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
         

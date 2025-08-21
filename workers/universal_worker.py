@@ -409,7 +409,7 @@ def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str,
         print(f" Writing {len(input_data)} records to CSV file")
         
         # Create output directory
-        output_dir = "./output"
+        output_dir = "/app/outputs"
         os.makedirs(output_dir, exist_ok=True)
         
         # Determine file type based on config
@@ -426,7 +426,8 @@ def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str,
             filename = f"{file_prefix}_{block_run_id}_{timestamp}.csv"
         
         output_path = os.path.join(output_dir, filename)
-        
+        print(f"Output path: {output_path}")
+
         # Create CSV data
         csv_rows = []
         for index, item in enumerate(input_data, start=1):  # start=1 makes IDs start from 1

@@ -23,7 +23,7 @@ async def upload_csv_and_create_pipeline(
             raise HTTPException(status_code=400, detail="Only CSV files are allowed")
         
         # Create uploads directory if it doesn't exist
-        upload_dir = "./uploads"
+        upload_dir = "/app/uploads"
         os.makedirs(upload_dir, exist_ok=True)
         
         # Save the uploaded file
