@@ -1,0 +1,6 @@
+text,toxicity_label,toxicity_score
+Just had the best coffee ever!,NON_TOXIC,0.8
+Can't believe how rude people are today,NON_TOXIC,0.8
+Beautiful sunset this evening,NON_TOXIC,0.8
+This movie was absolutely terrible,NON_TOXIC,0.8
+Feeling grateful for good friends,NON_TOXIC,0.8

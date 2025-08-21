@@ -14,8 +14,6 @@ class BlockType(str, enum.Enum):
     SENTIMENT_ANALYSIS = "sentiment_analysis"
     TOXICITY_DETECTION = "toxicity_detection"
     FILE_WRITER = "file_writer"
-    SENTIMENT_FILE_WRITER = "sentiment_file_writer"
-    TOXICITY_FILE_WRITER = "toxicity_file_writer"
 
 def analyze_sentiment_with_openai(text: str) -> dict:
     """Analyze sentiment of a single text using OpenAI"""
@@ -328,7 +326,6 @@ def _process_sentiment_analysis(block_run_id: int, config: Dict[str, Any]) -> Di
         }
         
         print(f"✅ Sentiment Analysis Completed!")
-        print(f"📊 Results: {sentiment_counts['POSITIVE']} positive, {sentiment_counts['NEGATIVE']} negative, {sentiment_counts['NEUTRAL']} neutral")
         return {"success": True, "result": result}
         
     except Exception as e:
@@ -385,9 +382,6 @@ def _process_toxicity_detection(block_run_id: int, config: Dict[str, Any]) -> Di
                 time.sleep(0.5)
         
         # Calculate summary statistics
-        toxicity_counts = {"TOXIC": 0, "NON_TOXIC": 0}
-        for result in results:
-            toxicity_counts[result["toxicity"]] += 1
         
         result = {
             "toxicity_results": results,
@@ -396,7 +390,6 @@ def _process_toxicity_detection(block_run_id: int, config: Dict[str, Any]) -> Di
         }
         
         print(f"✅ Toxicity Detection Completed!")
-        print(f" Results: {toxicity_counts['TOXIC']} toxic, {toxicity_counts['NON_TOXIC']} non-toxic")
         return {"success": True, "result": result}
         
     except Exception as e:
@@ -407,7 +400,7 @@ def _process_toxicity_detection(block_run_id: int, config: Dict[str, Any]) -> Di
 def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str, Any]:
     """Process File Writer tasks - Create real CSV files with analysis results"""
     print(f"Processing File Writer for block_run_id: {block_run_id}")
-    
+    print(f"*********File Writer: config***********: {config}")
     try:
         # Get input data from config (should be populated by orchestrator)
         input_data = config.get("input_data", [])
@@ -445,23 +438,32 @@ def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str,
             # Handle different data structures
             if "toxicity" in item:
                 # Toxicity detection results
-                csv_rows.append({
+                row = {
                     "text": item.get("text", ""),
                     "toxicity_label": item.get("toxicity", ""),
                     "toxicity_score": item.get("score", 0),
-                    "error": item.get("error", "")
-                })
+                }
+                # Only add error field if there's an actual error
+                if item.get("error"):
+                    row["error"] = item.get("error")
+                csv_rows.append(row)
+                
             elif "sentiment" in item:
                 # Sentiment analysis results
-                csv_rows.append({
+                row = {
                     "text": item.get("text", ""),
                     "sentiment_label": item.get("sentiment", ""),
                     "sentiment_score": item.get("score", 0),
-                    "error": item.get("error", "")
-                })
+                }
+                # Only add error field if there's an actual error
+                if item.get("error"):
+                    row["error"] = item.get("error")
+                csv_rows.append(row)
+                
             else:
-                # Generic data
-                csv_rows.append(item)
+                # Generic data - filter out empty error fields
+                filtered_item = {k: v for k, v in item.items() if not (k == "error" and not v)}
+                csv_rows.append(filtered_item)
         
         # Write to CSV file
         df = pd.DataFrame(csv_rows)

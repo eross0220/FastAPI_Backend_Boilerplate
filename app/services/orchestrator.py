@@ -107,6 +107,7 @@ class Orchestrator:
         print(f"🔄 Updating block configs with {data_type} data from block {source_block_run_id}")
         print(f"📤 Target blocks: {target_blocks}")
         print(f"📊 Data keys: {list(data.keys())}")
+        
         # Get the source block run to find the pipeline run
         source_block_run = db.query(BlockRun).filter(BlockRun.id == source_block_run_id).first()
         if not source_block_run:
@@ -120,12 +121,30 @@ class Orchestrator:
         for target_block_type in target_blocks:
             print(f"🎯 Looking for {target_block_type} block...")
             
-            # Find the block run for this block type
-            target_block_run = db.query(BlockRun).join(Block).filter(
-                BlockRun.pipeline_run_id == pipeline_run_id,
-                Block.block_type == BlockType(target_block_type)
-            ).first()
-            print(f"*********Target block run***********: {target_block_run}, target_block_run.status: {target_block_run.status}")
+            # Handle file writer types specifically
+            if target_block_type == "file_writer":
+                # Find file writers based on data type
+                if data_type == "sentiment_data":
+                    target_block_name = "File Writer (Sentiment)"
+                elif data_type == "toxicity_data":
+                    target_block_name = "File Writer (Toxicity)"
+                else:
+                    target_block_name = "File Writer"
+                
+                # Find by name instead of block type
+                target_block_run = db.query(BlockRun).join(Block).filter(
+                    BlockRun.pipeline_run_id == pipeline_run_id,
+                    Block.name == target_block_name
+                ).first()
+            else:
+                # For non-file-writer blocks, use block type
+                target_block_run = db.query(BlockRun).join(Block).filter(
+                    BlockRun.pipeline_run_id == pipeline_run_id,
+                    Block.block_type == BlockType(target_block_type)
+                ).first()
+            
+            print(f"*********Target block run***********: {target_block_run}, target_block_run.status: {target_block_run.status}, {target_block_run.block.name}")
+            
             if target_block_run and target_block_run.status == BlockStatus.PENDING:
                 print(f"✅ Found {target_block_type} block run {target_block_run.id}")
                 
@@ -232,157 +251,6 @@ class Orchestrator:
         
         return pipeline.id
     
-    def _process_csv_reader(block_run_id: int, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Process CSV Reader tasks - REAL CSV READING VERSION"""
-        print(f"Processing CSV Reader for block_run_id: {block_run_id}")
-        file_path = config.get("file_path", "./data/sample.csv")
-        
-        try:
-            # Check if file exists
-            if not os.path.exists(file_path):
-                error_msg = f"CSV file not found at path: {file_path}"
-                print(f"❌ {error_msg}")
-                return {"success": False, "error": error_msg}
-            
-            print(f"📁 Reading CSV file from: {file_path}")
-            
-            # Read CSV file using pandas
-            df = pd.read_csv(file_path)
-            
-            # Convert DataFrame to list of dictionaries
-            csv_data = df.to_dict('records')
-            
-            # Get column names
-            columns = df.columns.tolist()
-            
-            # Extract text column (assuming 'text' column exists, fallback to first column)
-            text_column = 'text' if 'text' in columns else columns[0]
-            texts = df[text_column].astype(str).tolist()
-            
-            print(f"✅ Successfully read {len(csv_data)} rows with {len(columns)} columns")
-            print(f"📊 Columns: {columns}")
-            print(f" Text column: {text_column}")
-            print(f" Extracted texts: {texts[:3]}...")  # Show first 3 texts
-            
-            # Enhanced result structure with real data flow information
-            result = {
-                "rows": csv_data,
-                "columns": columns,
-                "row_count": len(csv_data),
-                "file_path": file_path,
-                "data_type": "csv_data",
-                "next_blocks": [BlockType.SENTIMENT_ANALYSIS, BlockType.TOXICITY_DETECTION],
-                "texts": texts,  # Extract texts for next blocks
-                "text_column": text_column,  # Store which column contains text
-                "sample_data": csv_data[:3] if len(csv_data) > 3 else csv_data  # First 3 rows for debugging
-            }
-            
-            print(f"🚀 CSV Reader Completed - Ready to process {len(texts)} texts")
-            print(f"📤 Publishing data flow event for next blocks: {result['next_blocks']}")
-            return {"success": True, "result": result}
-            
-        except FileNotFoundError:
-            error_msg = f"CSV file not found: {file_path}"
-            print(f"❌ {error_msg}")
-            return {"success": False, "error": error_msg}
-            
-        except pd.errors.EmptyDataError:
-            error_msg = f"CSV file is empty: {file_path}"
-            print(f"❌ {error_msg}")
-            return {"success": False, "error": error_msg}
-            
-        except pd.errors.ParserError as e:
-            error_msg = f"Error parsing CSV file: {str(e)}"
-            print(f"❌ {error_msg}")
-            return {"success": False, "error": error_msg}
-            
-        except Exception as e:
-            error_msg = f"Unexpected error reading CSV: {str(e)}"
-            print(f"❌ {error_msg}")
-            return {"success": False, "error": error_msg}
-
-    def _process_sentiment_analysis(block_run_id: int, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Process Sentiment Analysis tasks using OpenAI API"""
-        print(f"Processing Sentiment Analysis for block_run_id: {block_run_id}")
-        print(f"📋 Full config received: {config}")
-        
-        # Get texts from config (should be populated by orchestrator)
-        texts = config.get("texts", [])
-        print(f"📝 Texts from config: {texts}")
-        print(f"📝 Config keys: {list(config.keys())}")
-        
-        if not texts:
-            error_msg = "No texts provided for sentiment analysis"
-            print(f"❌ {error_msg}")
-            print(f"🔍 Available config data:")
-            for key, value in config.items():
-                print(f"   {key}: {type(value)} = {value}")
-            return {"success": False, "error": error_msg}
-        
-        # Mock sentiment analysis results
-        mock_sentiments = ["POSITIVE", "NEGATIVE", "NEUTRAL", "POSITIVE", "NEGATIVE"]
-        mock_scores = [5, 0, 2.5, 5, 0]
-        
-        results = []
-        for i, text in enumerate(texts):
-            results.append({
-                "text": text,
-                "sentiment": mock_sentiments[i],
-                "score": mock_scores[i]
-            })
-        
-        print(f"Sentiment Analysis completed, processed {len(texts)} texts (MOCKUP)")
-        return {"success": True, "result": results}
-
-    def _process_toxicity_detection(config: Dict[str, Any]) -> Dict[str, Any]:
-        """Process Toxicity Detection tasks - MOCKUP VERSION"""
-        print(f"Processing Toxicity Detection for block_run_id: {config.get('block_run_id')}")
-        
-        # Mock input texts - replace with actual data from previous block
-        texts = config.get("texts", [
-            "This is a great product!",
-            "I'm not satisfied with the service.",
-            "The quality is okay, nothing special.",
-            "Absolutely love it! Best purchase ever.",
-            "Terrible experience, would not recommend."
-        ])
-        
-        # Mock toxicity detection results
-        mock_toxicity = ["NON_TOXIC", "NON_TOXIC", "NON_TOXIC", "NON_TOXIC", "NON_TOXIC"]
-        mock_scores = [0, 0, 0, 0, 0]
-        
-        results = []
-        for i, text in enumerate(texts):
-            results.append({
-                "text": text,
-                "toxicity": mock_toxicity[i],
-                "score": mock_scores[i]
-            })
-        
-        print(f"Toxicity Detection completed, processed {len(texts)} texts (MOCKUP)")
-        return {"success": True, "result": results}
-
-    def _process_file_writer(config: Dict[str, Any]) -> Dict[str, Any]:
-        """Process File Writer tasks - MOCKUP VERSION"""
-        print(f"Processing File Writer for block_run_id: {config.get('block_run_id')}")
-        
-        # Mock input data - replace with actual data from previous block
-        input_data = config.get("input_data", [])
-        output_format = config.get("output_format", "json")
-        output_path = config.get("output_path", f"./output/block_run_{config.get('block_run_id')}.{output_format}")
-        
-        # Mock file writing operation
-        mock_file_info = {
-            "output_path": output_path,
-            "file_size": "2.5 KB",
-            "records_written": len(input_data) if input_data else 5,
-            "format": output_format,
-            "status": "completed"
-        }
-        
-        print(f"File Writer completed, wrote to {output_path} (MOCKUP)")
-        return {"success": True, "result": mock_file_info}
-        
     def _create_file_writer_blocks(self, pipeline: Pipeline, db: Session):
         file_writer_toxicity = Block(
             pipeline_id=pipeline.id,
@@ -580,6 +448,7 @@ class Orchestrator:
             }
         )
         # ✅ FIX: Process data flow BEFORE dispatching next blocks
+        print(f"*********Block CompletionResult data***********: {result_data}")
         if success and "data_type" in result_data.get("result", {}):
             result_data_result = result_data.get("result", {})
             print(f"🔄 Processing data flow before dispatching next blocks")

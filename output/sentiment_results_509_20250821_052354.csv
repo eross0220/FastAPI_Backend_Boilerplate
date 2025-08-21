@@ -1,0 +1,6 @@
+text,sentiment_label,sentiment_score
+Just had the best coffee ever!,POSITIVE,0.8
+Can't believe how rude people are today,POSITIVE,0.8
+Beautiful sunset this evening,POSITIVE,0.8
+This movie was absolutely terrible,POSITIVE,0.8
+Feeling grateful for good friends,POSITIVE,0.8
