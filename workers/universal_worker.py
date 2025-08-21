@@ -429,11 +429,12 @@ def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str,
         
         # Create CSV data
         csv_rows = []
-        for item in input_data:
+        for index, item in enumerate(input_data, start=1):  # start=1 makes IDs start from 1
             # Handle different data structures
             if "toxicity" in item:
                 # Toxicity detection results
                 row = {
+                    "id": index,  # Add ID field
                     "text": item.get("text", ""),
                     "toxicity_label": item.get("toxicity", ""),
                 }
@@ -445,6 +446,7 @@ def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str,
             elif "sentiment" in item:
                 # Sentiment analysis results
                 row = {
+                    "id": index,  # Add ID field
                     "text": item.get("text", ""),
                     "sentiment_label": item.get("sentiment", ""),
                 }
@@ -454,8 +456,9 @@ def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str,
                 csv_rows.append(row)
                 
             else:
-                # Generic data - filter out empty error fields
+                # Generic data - filter out empty error fields and add ID
                 filtered_item = {k: v for k, v in item.items() if not (k == "error" and not v)}
+                filtered_item["id"] = index  # Add ID field at the beginning
                 csv_rows.append(filtered_item)
         
         # Write to CSV file
