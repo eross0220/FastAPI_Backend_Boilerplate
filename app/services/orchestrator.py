@@ -10,6 +10,8 @@ import time
 from rq import Queue
 from redis import Redis
 from workers.universal_worker import process_task
+import pandas as pd
+from app.models.pipeline import BlockType
 
 class Orchestrator:
     def __init__(self):
@@ -31,7 +33,7 @@ class Orchestrator:
         """Start Redis Pub/Sub consumer to listen for block completion events"""
         def consume_block_events():
             pubsub = self.redis_conn.pubsub()
-            pubsub.subscribe("block_completion_events", "data_flow_events")
+            pubsub.subscribe("block_completion_events")
             
             print("Started Redis consumer for block completion and data flow events")
             
@@ -57,8 +59,8 @@ class Orchestrator:
         
         if event_type in ["block_completed", "block_failed"]:
             self._handle_block_completion_event(event_data)
-        elif event_type == "data_ready":
-            self._handle_data_ready_event(event_data)
+        # elif event_type == "data_ready":
+        #     self._handle_data_ready_event(event_data)
     
     def _handle_block_completion_event(self, event_data: dict):
         """Handle block completion event from Redis"""
@@ -81,42 +83,52 @@ class Orchestrator:
         finally:
             db.close()
     
-    def _handle_data_ready_event(self, event_data: dict):
-        """Handle data ready event for next blocks"""
-        source_block_run_id = event_data.get("source_block_run_id")
-        data_type = event_data.get("data_type")
-        data = event_data.get("data", {})
-        target_blocks = event_data.get("target_blocks", [])
+    # def _handle_data_ready_event(self, event_data: dict):
+    #     print(f"*********Data ready event***********: {event_data}")
+    #     """Handle data ready event for next blocks"""
+    #     source_block_run_id = event_data.get("source_block_run_id")
+    #     data_type = event_data.get("data_type")
+    #     data = event_data.get("data", {})
+    #     target_blocks = event_data.get("target_blocks", [])
         
-        print(f"Data ready: {data_type} from block {source_block_run_id} for blocks {target_blocks}")
+    #     print(f"Data ready: {data_type} from block {source_block_run_id} for blocks {target_blocks}")
         
-        # Update configs for target blocks with the new data
-        from app.database.session import SessionLocal
-        db = SessionLocal()
+    #     # Update configs for target blocks with the new data
+    #     from app.database.session import SessionLocal
+    #     db = SessionLocal()
         
-        try:
-            self._update_block_configs_with_data(db, source_block_run_id, data_type, data, target_blocks)
-        finally:
-            db.close()
+    #     try:
+    #         self._update_block_configs_with_data(db, source_block_run_id, data_type, data, target_blocks)
+    #     finally:
+    #         db.close()
     
     def _update_block_configs_with_data(self, db: Session, source_block_run_id: int, data_type: str, data: dict, target_blocks: list):
         """Update block configs with data from previous blocks"""
+        print(f"🔄 Updating block configs with {data_type} data from block {source_block_run_id}")
+        print(f"📤 Target blocks: {target_blocks}")
+        print(f"📊 Data keys: {list(data.keys())}")
         # Get the source block run to find the pipeline run
         source_block_run = db.query(BlockRun).filter(BlockRun.id == source_block_run_id).first()
         if not source_block_run:
+            print(f"❌ Source block run {source_block_run_id} not found")
             return
         
         pipeline_run_id = source_block_run.pipeline_run_id
+        print(f"️  Pipeline run ID: {pipeline_run_id}")
         
         # Find target blocks in the same pipeline run
         for target_block_type in target_blocks:
+            print(f"🎯 Looking for {target_block_type} block...")
+            
             # Find the block run for this block type
             target_block_run = db.query(BlockRun).join(Block).filter(
                 BlockRun.pipeline_run_id == pipeline_run_id,
-                Block.block_type == target_block_type
+                Block.block_type == BlockType(target_block_type)
             ).first()
-            
+            print(f"*********Target block run***********: {target_block_run}, target_block_run.status: {target_block_run.status}")
             if target_block_run and target_block_run.status == BlockStatus.PENDING:
+                print(f"✅ Found {target_block_type} block run {target_block_run.id}")
+                
                 # Update the block config with the new data
                 block = db.query(Block).filter(Block.id == target_block_run.block_id).first()
                 if block:
@@ -127,18 +139,26 @@ class Orchestrator:
                     if data_type == "csv_data":
                         updated_config["texts"] = data.get("texts", [])
                         updated_config["csv_data"] = data
+                        print(f"📝 Added {len(data.get('texts', []))} texts to {target_block_type} config")
                     elif data_type == "sentiment_data":
                         updated_config["sentiment_data"] = data
                         updated_config["texts"] = data.get("texts", [])
+                        updated_config["input_data"] = data.get("sentiments_results", [])
+                        print(f"📝 Added sentiment data to {target_block_type} config")
                     elif data_type == "toxicity_data":
                         updated_config["toxicity_data"] = data
                         updated_config["texts"] = data.get("texts", [])
+                        updated_config["input_data"] = data.get("toxicity_results", [])
+                        print(f"📝 Added toxicity data to {target_block_type} config")
                     
                     # Update the block config
                     block.config = updated_config
                     db.commit()
                     
-                    print(f"Updated config for {target_block_type} block with {data_type} data")
+                    print(f"✅ Updated config for {target_block_type} block with {data_type} data")
+                    print(f" Config keys: {list(updated_config.keys())}")
+            else:
+                print(f"⚠️  {target_block_type} block not found or not pending")
     
     def create_sample_pipeline(self, db: Session):
         # Create pipeline
@@ -153,7 +173,7 @@ class Orchestrator:
         csv_block = Block(
             pipeline_id=pipeline.id,
             name="CSV Reader",
-            block_type="csv_reader",
+            block_type=BlockType.CSV_READER,
             config={"file_path": "./data/sample.csv", "purpose": "input_data"},
             order=1
         )
@@ -161,7 +181,7 @@ class Orchestrator:
         sentiment_block = Block(
             pipeline_id=pipeline.id,
             name="Sentiment Analysis",
-            block_type="sentiment_analysis",
+            block_type=BlockType.SENTIMENT_ANALYSIS,
             config={"purpose": "sentiment_processing"},
             order=2
         )
@@ -169,7 +189,7 @@ class Orchestrator:
         toxicity_block = Block(
             pipeline_id=pipeline.id,
             name="Toxicity Detection",
-            block_type="toxicity_detection",
+            block_type=BlockType.TOXICITY_DETECTION,
             config={"purpose": "toxicity_processing"},
             order=3
         )
@@ -177,7 +197,7 @@ class Orchestrator:
         file_writer_sentiment = Block(
             pipeline_id=pipeline.id,
             name="File Writer (Sentiment)",
-            block_type="file_writer",
+            block_type=BlockType.FILE_WRITER,
             config={
                 "purpose": "sentiment_output",
                 "output_type": "sentiment_results",
@@ -189,7 +209,7 @@ class Orchestrator:
         file_writer_toxicity = Block(
             pipeline_id=pipeline.id,
             name="File Writer (Toxicity)",
-            block_type="file_writer",
+            block_type=BlockType.FILE_WRITER,
             config={
                 "purpose": "toxicity_output", 
                 "output_type": "toxicity_results",
@@ -212,43 +232,92 @@ class Orchestrator:
         
         return pipeline.id
     
-    def _process_csv_reader(config: Dict[str, Any]) -> Dict[str, Any]:
-        """Process CSV Reader tasks - MOCKUP VERSION"""
-        print(f"Processing CSV Reader for block_run_id: {config.get('block_run_id')}")
+    def _process_csv_reader(block_run_id: int, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Process CSV Reader tasks - REAL CSV READING VERSION"""
+        print(f"Processing CSV Reader for block_run_id: {block_run_id}")
         file_path = config.get("file_path", "./data/sample.csv")
         
-        # Mock CSV data - replace with actual CSV reading logic
-        mock_data = [
-            {"id": 1, "text": "This is a great product!", "user": "user1"},
-            {"id": 2, "text": "I'm not satisfied with the service.", "user": "user2"},
-            {"id": 3, "text": "The quality is okay, nothing special.", "user": "user3"},
-            {"id": 4, "text": "Absolutely love it! Best purchase ever.", "user": "user4"},
-            {"id": 5, "text": "Terrible experience, would not recommend.", "user": "user5"}
-        ]
-        
-        # Mock result structure
-        result = {
-            "rows": mock_data,
-            "columns": ["id", "text", "user"],
-            "row_count": len(mock_data),
-            "file_path": file_path
-        }
-        
-        print(f"CSV Reader completed, processed {len(mock_data)} rows (MOCKUP)")
-        return {"success": True, "result": result}
+        try:
+            # Check if file exists
+            if not os.path.exists(file_path):
+                error_msg = f"CSV file not found at path: {file_path}"
+                print(f"❌ {error_msg}")
+                return {"success": False, "error": error_msg}
+            
+            print(f"📁 Reading CSV file from: {file_path}")
+            
+            # Read CSV file using pandas
+            df = pd.read_csv(file_path)
+            
+            # Convert DataFrame to list of dictionaries
+            csv_data = df.to_dict('records')
+            
+            # Get column names
+            columns = df.columns.tolist()
+            
+            # Extract text column (assuming 'text' column exists, fallback to first column)
+            text_column = 'text' if 'text' in columns else columns[0]
+            texts = df[text_column].astype(str).tolist()
+            
+            print(f"✅ Successfully read {len(csv_data)} rows with {len(columns)} columns")
+            print(f"📊 Columns: {columns}")
+            print(f" Text column: {text_column}")
+            print(f" Extracted texts: {texts[:3]}...")  # Show first 3 texts
+            
+            # Enhanced result structure with real data flow information
+            result = {
+                "rows": csv_data,
+                "columns": columns,
+                "row_count": len(csv_data),
+                "file_path": file_path,
+                "data_type": "csv_data",
+                "next_blocks": [BlockType.SENTIMENT_ANALYSIS, BlockType.TOXICITY_DETECTION],
+                "texts": texts,  # Extract texts for next blocks
+                "text_column": text_column,  # Store which column contains text
+                "sample_data": csv_data[:3] if len(csv_data) > 3 else csv_data  # First 3 rows for debugging
+            }
+            
+            print(f"🚀 CSV Reader Completed - Ready to process {len(texts)} texts")
+            print(f"📤 Publishing data flow event for next blocks: {result['next_blocks']}")
+            return {"success": True, "result": result}
+            
+        except FileNotFoundError:
+            error_msg = f"CSV file not found: {file_path}"
+            print(f"❌ {error_msg}")
+            return {"success": False, "error": error_msg}
+            
+        except pd.errors.EmptyDataError:
+            error_msg = f"CSV file is empty: {file_path}"
+            print(f"❌ {error_msg}")
+            return {"success": False, "error": error_msg}
+            
+        except pd.errors.ParserError as e:
+            error_msg = f"Error parsing CSV file: {str(e)}"
+            print(f"❌ {error_msg}")
+            return {"success": False, "error": error_msg}
+            
+        except Exception as e:
+            error_msg = f"Unexpected error reading CSV: {str(e)}"
+            print(f"❌ {error_msg}")
+            return {"success": False, "error": error_msg}
 
-    def _process_sentiment_analysis(config: Dict[str, Any]) -> Dict[str, Any]:
-        """Process Sentiment Analysis tasks - MOCKUP VERSION"""
-        print(f"Processing Sentiment Analysis for block_run_id: {config.get('block_run_id')}")
+    def _process_sentiment_analysis(block_run_id: int, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Process Sentiment Analysis tasks using OpenAI API"""
+        print(f"Processing Sentiment Analysis for block_run_id: {block_run_id}")
+        print(f"📋 Full config received: {config}")
         
-        # Mock input texts - replace with actual data from previous block
-        texts = config.get("texts", [
-            "This is a great product!",
-            "I'm not satisfied with the service.",
-            "The quality is okay, nothing special.",
-            "Absolutely love it! Best purchase ever.",
-            "Terrible experience, would not recommend."
-        ])
+        # Get texts from config (should be populated by orchestrator)
+        texts = config.get("texts", [])
+        print(f"📝 Texts from config: {texts}")
+        print(f"📝 Config keys: {list(config.keys())}")
+        
+        if not texts:
+            error_msg = "No texts provided for sentiment analysis"
+            print(f"❌ {error_msg}")
+            print(f"🔍 Available config data:")
+            for key, value in config.items():
+                print(f"   {key}: {type(value)} = {value}")
+            return {"success": False, "error": error_msg}
         
         # Mock sentiment analysis results
         mock_sentiments = ["POSITIVE", "NEGATIVE", "NEUTRAL", "POSITIVE", "NEGATIVE"]
@@ -318,7 +387,7 @@ class Orchestrator:
         file_writer_toxicity = Block(
             pipeline_id=pipeline.id,
             name="File Writer (Toxicity)",
-            block_type="file_writer",
+            block_type=BlockType.FILE_WRITER,
             config={},  # Will be populated with toxicity results
             order=5
         )
@@ -396,7 +465,8 @@ class Orchestrator:
             block_dependencies[block.id] = [dep.depends_on_id for dep in dependencies]
         
         # Find ready blocks (no dependencies or all dependencies completed)
-        ready_blocks = self._find_ready_blocks(db, pipeline_run_id, block_dependencies)        
+        ready_blocks = self._find_ready_blocks(db, pipeline_run_id, block_dependencies)
+        print(f"*********Ready blocks***********: {len(ready_blocks)}")        
         # Dispatch ready blocks to RQ queue
         for block_run in ready_blocks:
             self._dispatch_block_to_rq_queue(db, block_run)
@@ -443,10 +513,6 @@ class Orchestrator:
             return
         block = db.query(Block).filter(Block.id == block_run.block_id).first()
         
-        # Update block run status
-        block_run.status = BlockStatus.RUNNING
-        block_run.started_at = datetime.utcnow()
-        db.commit()
         
         # Emit block started event
         self.kafka_client.publish_event(
@@ -475,6 +541,11 @@ class Orchestrator:
         )
         
         print(f"Dispatched {block.block_type.value} to queue, job_id: {job.get_id()}")
+
+        # Update block run status
+        block_run.status = BlockStatus.RUNNING
+        block_run.started_at = datetime.utcnow()
+        db.commit()
 
     def handle_block_completion(self, db: Session, block_run_id: int, result_data: dict, success: bool = True):
         """Handle completion of a block run"""
@@ -508,7 +579,20 @@ class Orchestrator:
                 "timestamp": datetime.utcnow().isoformat()
             }
         )
-        
+        # ✅ FIX: Process data flow BEFORE dispatching next blocks
+        if success and "data_type" in result_data.get("result", {}):
+            result_data_result = result_data.get("result", {})
+            print(f"🔄 Processing data flow before dispatching next blocks")
+            
+            # Update configs for next blocks
+            self._update_block_configs_with_data(
+                db, 
+                block_run_id, 
+                result_data_result.get("data_type"),
+                result_data_result,
+                result_data_result.get("next_blocks", [])
+            )
+    
         # Check if pipeline is complete or if we can dispatch more tasks
         self._check_pipeline_completion(db, block_run.pipeline_run_id)
         self.resolve_dag_and_dispatch(db, block_run.pipeline_run_id)
@@ -545,7 +629,7 @@ class Orchestrator:
 
     def _get_block_purpose(self, block: Block) -> str:
         """Get a human-readable description of what this block does"""
-        if block.block_type.value == "file_writer":
+        if block.block_type.value == BlockType.FILE_WRITER:
             # Check the block name to determine purpose
             if "sentiment" in block.name.lower():
                 return "sentiment analysis results"
@@ -553,11 +637,85 @@ class Orchestrator:
                 return "toxicity detection results"
             else:
                 return "general output"
-        elif block.block_type.value == "csv_reader":
+        elif block.block_type.value == BlockType.CSV_READER:
             return "CSV data input"
-        elif block.block_type.value == "sentiment_analysis":
+        elif block.block_type.value == BlockType.SENTIMENT_ANALYSIS:
             return "sentiment analysis processing"
-        elif block.block_type.value == "toxicity_detection":
+        elif block.block_type.value == BlockType.TOXICITY_DETECTION:
             return "toxicity detection processing"
         else:
             return "data processing"
+
+    def create_pipeline_from_csv(self, db: Session, csv_file_path: str, filename: str) -> int:
+        """Create a pipeline based on uploaded CSV file"""
+        # Create pipeline
+        pipeline = Pipeline(
+            name=f"Pipeline for {filename}",
+            description=f"CSV → Sentiment Analysis → Toxicity Detection → File Writers"
+        )
+        db.add(pipeline)
+        db.commit()
+        
+        # Create blocks
+        csv_block = Block(
+            pipeline_id=pipeline.id,
+            name="CSV Reader",
+            block_type=BlockType.CSV_READER,
+            config={"file_path": csv_file_path, "purpose": "input_data"},
+            order=1
+        )
+        
+        sentiment_block = Block(
+            pipeline_id=pipeline.id,
+            name="Sentiment Analysis",
+            block_type=BlockType.SENTIMENT_ANALYSIS,
+            config={"purpose": "sentiment_processing"},
+            order=2
+        )
+        
+        toxicity_block = Block(
+            pipeline_id=pipeline.id,
+            name="Toxicity Detection",
+            block_type=BlockType.TOXICITY_DETECTION,
+            config={"purpose": "toxicity_processing"},
+            order=3
+        )
+        
+        file_writer_sentiment = Block(
+            pipeline_id=pipeline.id,
+            name="File Writer (Sentiment)",
+            block_type=BlockType.FILE_WRITER,
+            config={
+                "purpose": "sentiment_output",
+                "output_type": "sentiment_results",
+                "file_prefix": "sentiment_"
+            },
+            order=4
+        )
+        
+        file_writer_toxicity = Block(
+            pipeline_id=pipeline.id,
+            name="File Writer (Toxicity)",
+            block_type=BlockType.FILE_WRITER,
+            config={
+                "purpose": "toxicity_output", 
+                "output_type": "toxicity_results",
+                "file_prefix": "toxicity_"
+            },
+            order=5
+        )
+        
+        db.add_all([csv_block, sentiment_block, toxicity_block, file_writer_sentiment, file_writer_toxicity])
+        db.commit()
+        
+        # Create dependencies
+        sentiment_dep = BlockDependency(block_id=sentiment_block.id, depends_on_id=csv_block.id)
+        toxicity_dep = BlockDependency(block_id=toxicity_block.id, depends_on_id=csv_block.id)
+        file_sentiment_dep = BlockDependency(block_id=file_writer_sentiment.id, depends_on_id=sentiment_block.id)
+        file_toxicity_dep = BlockDependency(block_id=file_writer_toxicity.id, depends_on_id=toxicity_block.id)
+        
+        db.add_all([sentiment_dep, toxicity_dep, file_sentiment_dep, file_toxicity_dep])
+        db.commit()
+        
+        print(f"Created pipeline {pipeline.id} for CSV file: {filename}")
+        return pipeline.id

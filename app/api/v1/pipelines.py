@@ -1,18 +1,53 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.pipeline import Pipeline, PipelineRun
 from app.schemas.pipeline import PipelineCreate, PipelineRunCreate
 from app.services.orchestrator import Orchestrator
 from typing import List
+import os
+import shutil
 
 router = APIRouter()
 orchestrator = Orchestrator()
 
+@router.post("/upload-csv")
+async def upload_csv_and_create_pipeline(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Upload CSV file and create a sample pipeline based on it"""
+    try:
+        # Validate file type
+        if not file.filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+        
+        # Create uploads directory if it doesn't exist
+        upload_dir = "./uploads"
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Save the uploaded file
+        file_path = os.path.join(upload_dir, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Create pipeline based on the uploaded CSV
+        pipeline_id = orchestrator.create_pipeline_from_csv(db, file_path, file.filename)
+        
+        return {
+            "message": "CSV uploaded and pipeline created successfully",
+            "pipeline_id": pipeline_id,
+            "file_path": file_path,
+            "filename": file.filename
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/pipelines")
 def create_pipeline(pipeline: PipelineCreate, db: Session = Depends(get_db)):
     """Create a new pipeline"""
-    print("Creating  sample pipeline pipeline")
+    print("Creating sample pipeline")
     created_pipeline = orchestrator.create_sample_pipeline(db)
     return created_pipeline
 
@@ -31,7 +66,11 @@ def execute_pipeline(pipeline_id: int, db: Session = Depends(get_db)):
         # Start DAG resolution and task dispatch
         orchestrator.resolve_dag_and_dispatch(db, pipeline_run.id)
         
-        return pipeline_run
+        return {
+            "message": "Pipeline execution started",
+            "pipeline_run_id": pipeline_run.id,
+            "pipeline_id": pipeline_id
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

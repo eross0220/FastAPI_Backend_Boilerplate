@@ -39,10 +39,6 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
         print(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
-        
-        # Stop Kafka consumer if no more connections
-        if len(self.active_connections) == 0:
-            self._stop_kafka_consumer()
 
     async def broadcast(self, message: str):
         if not self.active_connections:
