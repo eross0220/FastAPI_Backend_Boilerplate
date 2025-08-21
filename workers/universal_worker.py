@@ -8,6 +8,10 @@ from datetime import datetime
 import time
 from openai import OpenAI
 import enum
+from dotenv import load_dotenv
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 class BlockType(str, enum.Enum):
     CSV_READER = "csv_reader"
@@ -18,7 +22,7 @@ class BlockType(str, enum.Enum):
 def analyze_sentiment_with_openai(text: str) -> dict:
     """Analyze sentiment of a single text using OpenAI"""
     try:
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = OPENAI_API_KEY
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
         
@@ -47,15 +51,11 @@ def analyze_sentiment_with_openai(text: str) -> dict:
         if sentiment not in ["POSITIVE", "NEGATIVE", "NEUTRAL"]:
             print(f"⚠️  Unexpected sentiment response: {sentiment}, defaulting to NEUTRAL")
             sentiment = "NEUTRAL"
-        
-        # Calculate sentiment score (0-1 scale)
-        sentiment_scores = {"POSITIVE": 0.8, "NEUTRAL": 0.5, "NEGATIVE": 0.2}
-        score = sentiment_scores.get(sentiment, 0.5)
+    
         
         return {
             "text": text,
             "sentiment": sentiment,
-            "score": score,
             "confidence": 0.9
         }
         
@@ -72,7 +72,7 @@ def analyze_sentiment_with_openai(text: str) -> dict:
 def detect_toxicity_with_openai(text: str) -> dict:
     """Detect toxicity in a single text using OpenAI"""
     try:
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = OPENAI_API_KEY
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
         
@@ -101,14 +101,9 @@ Respond only with the label, no explanations."""
             print(f"⚠️  Unexpected toxicity response: {toxicity}, defaulting to NON_TOXIC")
             toxicity = "NON_TOXIC"
         
-        # Calculate toxicity score (0-1 scale)
-        toxicity_scores = {"TOXIC": 0.8, "NON_TOXIC": 0.1}
-        score = toxicity_scores.get(toxicity, 0.1)
-        
         return {
             "text": text,
             "toxicity": toxicity,
-            "score": score,
         }
         
     except Exception as e:
@@ -297,13 +292,13 @@ def _process_sentiment_analysis(block_run_id: int, config: Dict[str, Any]) -> Di
             for j, text in enumerate(batch_texts):
                 try:
                     # Use the separate function
-                    # result = analyze_sentiment_with_openai(text)
-                    # results.append(result)
-                    results.append({
-                        "text": text,
-                        "sentiment": "POSITIVE",
-                        "score": 0.8,
-                    })                    
+                    result = analyze_sentiment_with_openai(text)
+                    results.append(result)
+                    # results.append({
+                    #     "text": text,
+                    #     "sentiment": "POSITIVE",
+                    #     "score": 0.8,
+                    # })                    
                 except Exception as e:
                     print(f"⚠️  Error processing text {i+j+1}: {str(e)}")
                     # Fallback result
@@ -359,13 +354,13 @@ def _process_toxicity_detection(block_run_id: int, config: Dict[str, Any]) -> Di
             for j, text in enumerate(batch_texts):
                 try:
                     # Use the separate function
-                    # result = detect_toxicity_with_openai(text)
-                    # results.append(result)
-                    results.append({
-                        "text": text,
-                        "toxicity": "NON_TOXIC",
-                        "score": 0.8,
-                    })
+                    result = detect_toxicity_with_openai(text)
+                    results.append(result)
+                    # results.append({
+                    #     "text": text,
+                    #     "toxicity": "NON_TOXIC",
+                    #     "score": 0.8,
+                    # })
                     
                 except Exception as e:
                     print(f"⚠️  Error processing text {i+j+1}: {str(e)}")
@@ -441,7 +436,6 @@ def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str,
                 row = {
                     "text": item.get("text", ""),
                     "toxicity_label": item.get("toxicity", ""),
-                    "toxicity_score": item.get("score", 0),
                 }
                 # Only add error field if there's an actual error
                 if item.get("error"):
@@ -453,7 +447,6 @@ def _process_file_writer(block_run_id: int, config: Dict[str, Any]) -> Dict[str,
                 row = {
                     "text": item.get("text", ""),
                     "sentiment_label": item.get("sentiment", ""),
-                    "sentiment_score": item.get("score", 0),
                 }
                 # Only add error field if there's an actual error
                 if item.get("error"):
