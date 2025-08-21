@@ -13,11 +13,6 @@ test.db
 ehthumbs.db
 Thumbs.db
 
-# Environment variables #
-########################
-.env
-
-output/
 
 # IntelliJ
 .idea/
