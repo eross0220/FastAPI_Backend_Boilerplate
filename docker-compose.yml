@@ -15,6 +15,23 @@ services:
       - worker2
       - kafka1
     command: uvicorn app.main:app --host 0.0.0.0 --port 8333 --reload
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: app-ui
+    ports:
+      - "3002:3000"
+    volumes:
+      - "./ui:/app"
+      - /app/node_modules # Preserve node_modules
+      - /app/.next # Preserve build cache
+    env_file:
+      - "./ui/.env"
+    command: npm start
+    depends_on:
+      - api
+    restart: unless-stopped
 
   worker1:
     build: .
@@ -78,13 +95,3 @@ services:
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
     depends_on:
       - zoo1
-
-  # sqlite:
-  #   image: hibitdev/sqlite:latest
-  #   container_name: sqlite
-  #   hostname: sqlite.hibit
-  #   ports:
-  #     - "8191:8191"
-  #   volumes:
-  #     - ./sqlite:/db
-  #   command: ["tail", "-f", "/dev/null"]

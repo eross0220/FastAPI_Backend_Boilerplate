@@ -1,0 +1,41 @@
+id,text,sentiment_label
+1,Just had the best coffee ever!,POSITIVE
+2,Can't believe how rude people are today,NEGATIVE
+3,Beautiful sunset this evening,POSITIVE
+4,This movie was absolutely terrible,NEGATIVE
+5,Feeling grateful for good friends,POSITIVE
+6,Why do people have to be so stupid,NEGATIVE
+7,Amazing workout session today,POSITIVE
+8,Traffic is driving me insane,NEGATIVE
+9,Love this new restaurant,POSITIVE
+10,Some people are just worthless,NEGATIVE
+11,Perfect weather for a walk,POSITIVE
+12,This food tastes like garbage,NEGATIVE
+13,So happy about the promotion,POSITIVE
+14,I hate everyone right now,NEGATIVE
+15,Great book recommendation,POSITIVE
+16,Customer service is a joke,NEGATIVE
+17,Feeling blessed today,POSITIVE
+18,People are so annoying,NEGATIVE
+19,Wonderful family dinner,POSITIVE
+20,This is the worst day ever,NEGATIVE
+21,Excited about the weekend,POSITIVE
+22,Why is life so unfair,NEGATIVE
+23,Amazing concert last night,POSITIVE
+24,Some people deserve to die,NEGATIVE
+25,Feeling peaceful and content,POSITIVE
+26,This place is disgusting,NEGATIVE
+27,So proud of my team,POSITIVE
+28,I want to hurt someone,NEGATIVE
+29,Lovely morning walk,POSITIVE
+30,People are so dumb,NEGATIVE
+31,Grateful for good health,POSITIVE
+32,This makes me sick,NEGATIVE
+33,Feeling motivated today,POSITIVE
+34,I hate this world,NEGATIVE
+35,Beautiful flowers in bloom,POSITIVE
+36,Some people are trash,NEGATIVE
+37,Feeling optimistic about tomorrow,POSITIVE
+38,This is pure garbage,NEGATIVE
+39,So happy with life,POSITIVE
+40,People are the worst,NEGATIVE

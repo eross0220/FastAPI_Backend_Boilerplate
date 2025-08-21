@@ -183,8 +183,8 @@ def process_task(block_run_id: int, block_type: str, config: Dict[str, Any]) -> 
         else:
             raise ValueError(f"Unknown block type: {block_type}")
         
-        # Publish completion event
-        redis_client.publish_block_completion(block_run_id, result, success=True)
+        success = result.get("success", False)
+        redis_client.publish_block_completion(block_run_id, result, success=success)
         
         # # Publish data ready event for next blocks
         # if result.get("success") and "data_type" in result.get("result", {}):

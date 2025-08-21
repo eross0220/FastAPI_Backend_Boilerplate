@@ -56,6 +56,7 @@ class Orchestrator:
     def _handle_redis_event(self, event_data: dict):
         """Handle events from Redis Pub/Sub"""
         event_type = event_data.get("event_type")
+        print(f"*********Redis Event type***********: {event_type}")
         
         if event_type in ["block_completed", "block_failed"]:
             self._handle_block_completion_event(event_data)
@@ -64,6 +65,7 @@ class Orchestrator:
     
     def _handle_block_completion_event(self, event_data: dict):
         """Handle block completion event from Redis"""
+        print(f"*********Redis Event data***********: {event_data}")
         block_run_id = event_data.get("block_run_id")
         success = event_data.get("success", False)
         result_data = event_data.get("result_data", {})
